@@ -29,18 +29,17 @@ end
 -- ============================================================
 
 local scanChannel = serv:Channel("Scanner")
+local scanEnabled = false
 
-scanChannel:Toggle("Highlight Unsafe Tiles", false, function(enabled)
+-- Reusable function so the persistent loop can call it
+local function runScan()
     local tilesFolder = getTilesFolder()
-    if not tilesFolder then
-        DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
-        return
-    end
+    if not tilesFolder then return end
 
-    if enabled then
-        local count = 0
-        for _, group in ipairs(tilesFolder:GetChildren()) do
-            if group.Name == "Unactivated" and group:FindFirstChild("Mine") then
+    -- Add highlights to newly unsafe tiles, remove from tiles that no longer qualify
+    for _, group in ipairs(tilesFolder:GetChildren()) do
+        if group.Name == "Unactivated" then
+            if group:FindFirstChild("Mine") then
                 if not group:FindFirstChild("SloppyHighlight") then
                     local highlight = Instance.new("SelectionBox")
                     highlight.Name = "SloppyHighlight"
@@ -50,19 +49,37 @@ scanChannel:Toggle("Highlight Unsafe Tiles", false, function(enabled)
                     highlight.SurfaceTransparency = 0.6
                     highlight.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
                     highlight.Parent = group
-                    count = count + 1
                 end
+            else
+                local h = group:FindFirstChild("SloppyHighlight")
+                if h then h:Destroy() end
             end
         end
-        DiscordLib:Notification("Scanner", string.format("Highlighted %d unsafe tile(s).", count), "Got it")
-    else
-        local removed = 0
-        for _, group in ipairs(tilesFolder:GetChildren()) do
-            local h = group:FindFirstChild("SloppyHighlight")
-            if h then h:Destroy() end
-            removed = removed + 1
-        end
-        DiscordLib:Notification("Scanner", string.format("Removed %d highlight(s).", removed), "Got it")
+    end
+end
+
+local function clearAllHighlights()
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then return end
+    for _, group in ipairs(tilesFolder:GetChildren()) do
+        local h = group:FindFirstChild("SloppyHighlight")
+        if h then h:Destroy() end
+    end
+end
+
+scanChannel:Toggle("Highlight Unsafe Tiles", false, function(enabled)
+    scanEnabled = enabled
+
+    if enabled then
+        DiscordLib:Notification("Scanner", "Unsafe tile highlighting on.", "Got it")
+        task.spawn(function()
+            while scanEnabled do
+                runScan()
+                task.wait(1) -- re-scan every second to catch new rounds
+            end
+            clearAllHighlights()
+            DiscordLib:Notification("Scanner", "Highlights removed.", "Got it")
+        end)
     end
 end)
 
@@ -87,42 +104,60 @@ end)
 -- ============================================================
 
 local teleportChannel = serv:Channel("Teleporter")
-local teleportRunning = false
+local teleportEnabled = false
 
-teleportChannel:Button("Auto-Teleport Safe Tiles", function()
-    if teleportRunning then
-        DiscordLib:Notification("Teleporter", "Already running! Wait for it to finish.", "Okay")
-        return
-    end
-    local tilesFolder = getTilesFolder()
-    if not tilesFolder then DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay") return end
-    local character = player.Character
-    local hrp = character and character:FindFirstChild("HumanoidRootPart")
-    if not hrp then DiscordLib:Notification("Error", "No HumanoidRootPart found.", "Okay") return end
-
-    local function findNextTile()
-        for _, group in ipairs(tilesFolder:GetChildren()) do
-            if group.Name == "Unactivated" and not group:FindFirstChild("Mine") then return group end
+local function findNextTile(tilesFolder)
+    for _, group in ipairs(tilesFolder:GetChildren()) do
+        if group.Name == "Unactivated" and not group:FindFirstChild("Mine") then
+            return group
         end
-        return nil
     end
+    return nil
+end
 
-    teleportRunning = true
-    task.spawn(function()
-        local count = 0
-        while true do
-            local tile = findNextTile()
-            if not tile then
-                DiscordLib:Notification("Teleporter", string.format("Done! Visited %d safe tile(s).", count), "Sweet")
-                teleportRunning = false
-                break
+teleportChannel:Toggle("Auto-Teleport Safe Tiles", false, function(enabled)
+    teleportEnabled = enabled
+
+    if enabled then
+        DiscordLib:Notification("Teleporter", "Auto-teleport on.", "Let's go")
+
+        task.spawn(function()
+            while teleportEnabled do
+                local tilesFolder = getTilesFolder()
+
+                -- If no tiles folder yet (between rounds) just wait
+                if not tilesFolder then
+                    task.wait(1)
+                    continue
+                end
+
+                local character = player.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+                -- If character isn't ready yet, wait
+                if not hrp then
+                    task.wait(1)
+                    continue
+                end
+
+                local tile = findNextTile(tilesFolder)
+
+                if tile then
+                    local cf = getTileCFrame(tile)
+                    if cf then
+                        hrp.CFrame = cf + Vector3.new(0, 5, 0)
+                    end
+                    task.wait(0) -- go as fast as possible while tiles remain
+                else
+                    -- No safe tiles left this round — wait and re-check
+                    -- (next round will repopulate the folder)
+                    task.wait(1)
+                end
             end
-            local cf = getTileCFrame(tile)
-            if cf then hrp.CFrame = cf + Vector3.new(0, 5, 0) count += 1 end
-            task.wait(0)
-        end
-    end)
-    DiscordLib:Notification("Teleporter", "Started teleporting through safe tiles!", "Let's go")
+
+            DiscordLib:Notification("Teleporter", "Auto-teleport stopped.", "Okay")
+        end)
+    end
 end)
 
 -- ============================================================
@@ -134,7 +169,6 @@ local entityEnabled = false
 local DUPE_NAME = "SloppyEntityDupe"
 
 local function cleanAllDupes()
-    -- Search whole workspace in case folder moved
     for _, v in ipairs(workspace:GetDescendants()) do
         if v.Name == DUPE_NAME then v:Destroy() end
     end
@@ -163,10 +197,8 @@ entityChannel:Toggle("Show Entity Trackers", false, function(enabled)
                                 local dupe = workspace:FindFirstChild(DUPE_NAME .. "_" .. entity.Name)
 
                                 if not dupe then
-                                    -- Create a fresh visible dupe in workspace
                                     dupe = Instance.new("Part")
                                     dupe.Name = DUPE_NAME .. "_" .. entity.Name
-                                    -- Fully visible neon red, no transparency at all
                                     dupe.Color = Color3.fromRGB(255, 50, 50)
                                     dupe.Material = Enum.Material.Neon
                                     dupe.Transparency = 0
@@ -179,7 +211,6 @@ entityChannel:Toggle("Show Entity Trackers", false, function(enabled)
                                     dupe.Parent = workspace
                                 end
 
-                                -- Every iteration snap dupe to the real primary
                                 dupe.CFrame = primary.CFrame
                                 dupe.Size = primary.Size
                             end
