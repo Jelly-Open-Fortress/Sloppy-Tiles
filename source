@@ -1,4 +1,4 @@
-local raw = game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt")
+local raw = game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt", true)
 local DiscordLib = loadstring(raw)()
 
 local Players = game:GetService("Players")
