@@ -1,354 +1,167 @@
--- Sloppy Tiles Hub
--- A debugging hub for tile-based Roblox games
--- Load with: loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_USERNAME/sloppy-tiles/master/source"))()
+local DiscordLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt"))()
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-
--- ============================================================
---  GUI Setup
--- ============================================================
-
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
--- Remove any existing instance
-local existing = playerGui:FindFirstChild("SloppyTilesHub")
-if existing then existing:Destroy() end
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SloppyTilesHub"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
-
--- Main frame
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.new(0, 340, 0, 420)
-main.Position = UDim2.new(0.5, -170, 0.5, -210)
-main.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-main.BorderSizePixel = 0
-main.Active = true
-main.Draggable = true
-main.Parent = screenGui
-
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 44)
-titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = main
-
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
-
--- Cover bottom corners of title bar
-local titleCover = Instance.new("Frame")
-titleCover.Size = UDim2.new(1, 0, 0, 10)
-titleCover.Position = UDim2.new(0, 0, 1, -10)
-titleCover.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-titleCover.BorderSizePixel = 0
-titleCover.Parent = titleBar
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -50, 1, 0)
-titleLabel.Position = UDim2.new(0, 14, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "🪄 Sloppy Tiles"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 16
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
-
--- Close button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -38, 0, 7)
-closeBtn.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextSize = 14
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.BorderSizePixel = 0
-closeBtn.Parent = titleBar
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
-closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
-
--- Status label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -20, 0, 28)
-statusLabel.Position = UDim2.new(0, 10, 0, 50)
-statusLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-statusLabel.Text = "Ready."
-statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-statusLabel.TextSize = 13
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.BorderSizePixel = 0
-statusLabel.Parent = main
-Instance.new("UICorner", statusLabel).CornerRadius = UDim.new(0, 6)
-
-local function setStatus(msg, color)
-    statusLabel.Text = msg
-    statusLabel.TextColor3 = color or Color3.fromRGB(180, 180, 180)
-end
-
--- Scroll frame for buttons
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -20, 1, -96)
-scroll.Position = UDim2.new(0, 10, 0, 86)
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 4
-scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.Parent = main
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 8)
-listLayout.Parent = scroll
+local win = DiscordLib:Window("Sloppy Tiles")
+local serv = win:Server("Main", "")
 
 -- ============================================================
---  Button Factory
--- ============================================================
-
-local function makeButton(label, desc, color, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 56)
-    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-    btn.BorderSizePixel = 0
-    btn.Text = ""
-    btn.Parent = scroll
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-
-    -- Accent bar on left
-    local accent = Instance.new("Frame")
-    accent.Size = UDim2.new(0, 4, 1, -12)
-    accent.Position = UDim2.new(0, 0, 0, 6)
-    accent.BackgroundColor3 = color
-    accent.BorderSizePixel = 0
-    accent.Parent = btn
-    Instance.new("UICorner", accent).CornerRadius = UDim.new(0, 4)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -18, 0, 22)
-    title.Position = UDim2.new(0, 14, 0, 8)
-    title.BackgroundTransparency = 1
-    title.Text = label
-    title.TextColor3 = Color3.fromRGB(240, 240, 240)
-    title.TextSize = 14
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = btn
-
-    local sub = Instance.new("TextLabel")
-    sub.Size = UDim2.new(1, -18, 0, 18)
-    sub.Position = UDim2.new(0, 14, 0, 30)
-    sub.BackgroundTransparency = 1
-    sub.Text = desc
-    sub.TextColor3 = Color3.fromRGB(120, 120, 120)
-    sub.TextSize = 12
-    sub.Font = Enum.Font.Gotham
-    sub.TextXAlignment = Enum.TextXAlignment.Left
-    sub.Parent = btn
-
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(38, 38, 38)}):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(28, 28, 28)}):Play()
-    end)
-    btn.MouseButton1Click:Connect(function()
-        local ok, err = pcall(callback)
-        if not ok then setStatus("Error: " .. tostring(err), Color3.fromRGB(255, 80, 80)) end
-    end)
-
-    return btn
-end
-
--- ============================================================
---  Helper: get tiles folder
+--  Helpers
 -- ============================================================
 
 local function getTilesFolder()
-    local f = workspace:FindFirstChild("Tiles")
-    if not f then
-        setStatus("No 'Tiles' folder in Workspace!", Color3.fromRGB(255, 80, 80))
-        return nil
+    return workspace:FindFirstChild("Tiles")
+end
+
+local function getTileCFrame(group)
+    if group:IsA("Model") and group.PrimaryPart then
+        return group.PrimaryPart.CFrame
     end
-    return f
+    for _, part in ipairs(group:GetDescendants()) do
+        if part:IsA("BasePart") then return part.CFrame end
+    end
+    return nil
 end
 
 -- ============================================================
---  Feature 1: Scan & Highlight Unsafe Tiles
+--  Channel: Scanner
 -- ============================================================
 
-local activeHighlights = {}
+local scanChannel = serv:Channel("Scanner")
 
-makeButton(
-    "Scan & Highlight Unsafe",
-    "Red highlight on tiles with a Mine child",
-    Color3.fromRGB(220, 60, 60),
-    function()
-        -- Clear previous highlights
-        for _, h in ipairs(activeHighlights) do
-            if h and h.Parent then h:Destroy() end
-        end
-        activeHighlights = {}
+scanChannel:Toggle("Highlight Unsafe Tiles", false, function(enabled)
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then
+        DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
+        return
+    end
 
-        local tilesFolder = getTilesFolder()
-        if not tilesFolder then return end
-
-        local safe, unsafe = 0, 0
-
+    if enabled then
+        local count = 0
         for _, group in ipairs(tilesFolder:GetChildren()) do
-            if group.Name == "Unactivated" then
-                if group:FindFirstChild("Mine") then
+            if group.Name == "Unactivated" and group:FindFirstChild("Mine") then
+                if not group:FindFirstChild("SloppyHighlight") then
                     local highlight = Instance.new("SelectionBox")
+                    highlight.Name = "SloppyHighlight"
                     highlight.Adornee = group
                     highlight.Color3 = Color3.fromRGB(255, 0, 0)
                     highlight.LineThickness = 0.05
                     highlight.SurfaceTransparency = 0.6
                     highlight.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
                     highlight.Parent = group
-                    table.insert(activeHighlights, highlight)
-                    unsafe = unsafe + 1
-                else
-                    safe = safe + 1
+                    count = count + 1
                 end
             end
         end
-
-        setStatus(
-            string.format("Safe: %d  |  Unsafe: %d highlighted", safe, unsafe),
-            Color3.fromRGB(100, 220, 100)
-        )
-    end
-)
-
--- ============================================================
---  Feature 2: Clear Highlights
--- ============================================================
-
-makeButton(
-    "Clear Highlights",
-    "Remove all SelectionBox highlights",
-    Color3.fromRGB(100, 100, 180),
-    function()
-        for _, h in ipairs(activeHighlights) do
-            if h and h.Parent then h:Destroy() end
+        DiscordLib:Notification("Scanner", string.format("Highlighted %d unsafe tile(s).", count), "Got it")
+    else
+        local removed = 0
+        for _, group in ipairs(tilesFolder:GetChildren()) do
+            local h = group:FindFirstChild("SloppyHighlight")
+            if h then
+                h:Destroy()
+                removed = removed + 1
+            end
         end
-        activeHighlights = {}
-        setStatus("Highlights cleared.", Color3.fromRGB(180, 180, 180))
+        DiscordLib:Notification("Scanner", string.format("Removed %d highlight(s).", removed), "Got it")
     end
-)
+end)
+
+scanChannel:Button("Count Safe / Unsafe", function()
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then
+        DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
+        return
+    end
+
+    local safe, unsafe = 0, 0
+    for _, group in ipairs(tilesFolder:GetChildren()) do
+        if group.Name == "Unactivated" then
+            if group:FindFirstChild("Mine") then
+                unsafe = unsafe + 1
+            else
+                safe = safe + 1
+            end
+        end
+    end
+
+    DiscordLib:Notification(
+        "Tile Count",
+        string.format("Safe: %d | Unsafe: %d | Total: %d", safe, unsafe, safe + unsafe),
+        "Nice"
+    )
+    print(string.format("[Sloppy Tiles] Safe: %d | Unsafe: %d | Total: %d", safe, unsafe, safe + unsafe))
+end)
 
 -- ============================================================
---  Feature 3: Auto-Teleport Through Safe Tiles (HRP)
+--  Channel: Teleporter
 -- ============================================================
+
+local teleportChannel = serv:Channel("Teleporter")
 
 local teleportRunning = false
 
-makeButton(
-    "Auto-Teleport Safe Tiles",
-    "Teleport HRP through each safe tile",
-    Color3.fromRGB(60, 180, 120),
-    function()
-        if teleportRunning then
-            setStatus("Already running! Rejoin to stop.", Color3.fromRGB(255, 180, 60))
-            return
-        end
-
-        local tilesFolder = getTilesFolder()
-        if not tilesFolder then return end
-
-        local character = player.Character
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        if not hrp then
-            setStatus("No HumanoidRootPart found.", Color3.fromRGB(255, 80, 80))
-            return
-        end
-
-        local function findNextTile()
-            for _, group in ipairs(tilesFolder:GetChildren()) do
-                if group.Name == "Unactivated" and not group:FindFirstChild("Mine") then
-                    return group
-                end
-            end
-            return nil
-        end
-
-        local function getTileCFrame(group)
-            if group:IsA("Model") and group.PrimaryPart then
-                return group.PrimaryPart.CFrame
-            end
-            for _, part in ipairs(group:GetDescendants()) do
-                if part:IsA("BasePart") then return part.CFrame end
-            end
-            return nil
-        end
-
-        teleportRunning = true
-        setStatus("Teleporting...", Color3.fromRGB(60, 180, 120))
-
-        task.spawn(function()
-            local count = 0
-            while true do
-                local tile = findNextTile()
-                if not tile then
-                    setStatus(
-                        string.format("Done! Visited %d tile(s).", count),
-                        Color3.fromRGB(100, 220, 100)
-                    )
-                    teleportRunning = false
-                    break
-                end
-                local cf = getTileCFrame(tile)
-                if cf then
-                    hrp.CFrame = cf + Vector3.new(0, 5, 0)
-                    count = count + 1
-                    setStatus(string.format("Teleporting... [%d]", count), Color3.fromRGB(60, 180, 120))
-                end
-                task.wait(0)
-            end
-        end)
+teleportChannel:Button("Auto-Teleport Safe Tiles", function()
+    if teleportRunning then
+        DiscordLib:Notification("Teleporter", "Already running! Wait for it to finish.", "Okay")
+        return
     end
-)
 
--- ============================================================
---  Feature 4: Count Safe vs Unsafe
--- ============================================================
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then
+        DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
+        return
+    end
 
-makeButton(
-    "Count Safe / Unsafe",
-    "Print totals to Output without highlighting",
-    Color3.fromRGB(200, 160, 40),
-    function()
-        local tilesFolder = getTilesFolder()
-        if not tilesFolder then return end
+    local character = player.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        DiscordLib:Notification("Error", "No HumanoidRootPart found. Are you in-game?", "Okay")
+        return
+    end
 
-        local safe, unsafe, total = 0, 0, 0
+    local function findNextTile()
         for _, group in ipairs(tilesFolder:GetChildren()) do
-            if group.Name == "Unactivated" then
-                total = total + 1
-                if group:FindFirstChild("Mine") then
-                    unsafe = unsafe + 1
-                else
-                    safe = safe + 1
-                end
+            if group.Name == "Unactivated" and not group:FindFirstChild("Mine") then
+                return group
             end
         end
-
-        setStatus(
-            string.format("Total: %d  |  Safe: %d  |  Unsafe: %d", total, safe, unsafe),
-            Color3.fromRGB(200, 160, 40)
-        )
-        print(string.format("[Sloppy Tiles] Total: %d | Safe: %d | Unsafe: %d", total, safe, unsafe))
+        return nil
     end
-)
 
-setStatus("Sloppy Tiles loaded. Pick a tool above.")
-print("[Sloppy Tiles] Hub loaded successfully.")
+    teleportRunning = true
+
+    task.spawn(function()
+        local count = 0
+        while true do
+            local tile = findNextTile()
+            if not tile then
+                DiscordLib:Notification(
+                    "Teleporter",
+                    string.format("Done! Visited %d safe tile(s).", count),
+                    "Sweet"
+                )
+                teleportRunning = false
+                break
+            end
+            local cf = getTileCFrame(tile)
+            if cf then
+                hrp.CFrame = cf + Vector3.new(0, 5, 0)
+                count = count + 1
+            end
+            task.wait(0)
+        end
+    end)
+
+    DiscordLib:Notification("Teleporter", "Started teleporting through safe tiles!", "Let's go")
+end)
+
+-- ============================================================
+--  Channel: Info
+-- ============================================================
+
+local infoChannel = serv:Channel("Info")
+infoChannel:Label("Sloppy Tiles — Tile game debugger")
+infoChannel:Label("Scans workspace.Tiles for Unactivated groups")
+infoChannel:Label("Safe = no Mine child | Unsafe = has Mine child")
