@@ -99,7 +99,6 @@ end)
 -- ============================================================
 
 local teleportChannel = serv:Channel("Teleporter")
-
 local teleportRunning = false
 
 teleportChannel:Button("Auto-Teleport Safe Tiles", function()
@@ -163,83 +162,119 @@ end)
 
 local entityChannel = serv:Channel("Entities")
 
--- Tracks connections so we can disconnect them when toggled off
-local entityHighlightConnections = {}
-local entityHighlightEnabled = false
+-- Holds all dupe parts and their update connections so we can clean up
+local entityDupes = {}       -- { part, connection }
+local entityWatchers = {}    -- ChildAdded/ChildRemoved connections on the folder
+local entityEnabled = false
 
-local function highlightEntity(entity)
-    -- Use a Highlight instance for the outline glow effect
-    -- This works even on invisible parts since it renders a silhouette
-    if entity:FindFirstChild("SloppyEntityHighlight") then return end
+local DUPE_NAME = "SloppyEntityDupe"
+local DUPE_COLOR = Color3.fromRGB(255, 50, 50)
+local DUPE_TRANSPARENCY = 0.3
 
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "SloppyEntityHighlight"
-    highlight.Adornee = entity
-    highlight.FillColor = Color3.fromRGB(255, 50, 50)
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
-    highlight.FillTransparency = 0.4
-    highlight.OutlineTransparency = 0
-    -- DepthMode = AlwaysOnTop so it shows through walls too
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Parent = entity
+local function makeDupe(primaryPart)
+    -- Don't double-dupe
+    if primaryPart:FindFirstChild(DUPE_NAME) then return end
+
+    local dupe = Instance.new("Part")
+    dupe.Name = DUPE_NAME
+    dupe.Size = primaryPart.Size
+    dupe.CFrame = primaryPart.CFrame
+    dupe.Color = DUPE_COLOR
+    dupe.Material = Enum.Material.Neon
+    dupe.Transparency = DUPE_TRANSPARENCY
+    dupe.CanCollide = false
+    dupe.CanQuery = false
+    dupe.Anchored = true
+    dupe.CastShadow = false
+    dupe.Parent = primaryPart
+
+    -- Every frame snap the dupe to the primary so it tracks moving entities
+    local conn = game:GetService("RunService").Heartbeat:Connect(function()
+        if primaryPart and primaryPart.Parent and dupe and dupe.Parent then
+            dupe.CFrame = primaryPart.CFrame
+        else
+            -- Primary or dupe is gone, clean ourselves up
+            if dupe and dupe.Parent then dupe:Destroy() end
+            conn:Disconnect()
+        end
+    end)
+
+    table.insert(entityDupes, { part = dupe, connection = conn })
 end
 
-local function removeEntityHighlight(entity)
-    local h = entity:FindFirstChild("SloppyEntityHighlight")
-    if h then h:Destroy() end
+local function removeDupesForEntity(entity)
+    local primary = entity.PrimaryPart
+        or entity:FindFirstChildWhichIsA("BasePart")
+    if primary then
+        local d = primary:FindFirstChild(DUPE_NAME)
+        if d then d:Destroy() end
+    end
 end
 
-entityChannel:Toggle("Highlight Entities", false, function(enabled)
+local function trackEntity(entity)
+    if not entity:IsA("Model") then return end
+
+    -- Wait a moment in case the PrimaryPart isn't set yet on spawn
+    task.defer(function()
+        if not entityEnabled then return end
+        local primary = entity.PrimaryPart
+        if not primary then
+            -- Fallback: grab first BasePart
+            primary = entity:FindFirstChildWhichIsA("BasePart")
+        end
+        if primary then
+            makeDupe(primary)
+        end
+    end)
+end
+
+entityChannel:Toggle("Show Entity Trackers", false, function(enabled)
     local entitiesFolder = workspace:FindFirstChild("Entities")
     if not entitiesFolder then
         DiscordLib:Notification("Error", "No 'Entities' folder found in Workspace!", "Okay")
         return
     end
 
-    -- Clean up previous connections no matter what
-    for _, conn in ipairs(entityHighlightConnections) do
-        conn:Disconnect()
-    end
-    entityHighlightConnections = {}
-    entityHighlightEnabled = enabled
+    -- Always disconnect old watchers first
+    for _, conn in ipairs(entityWatchers) do conn:Disconnect() end
+    entityWatchers = {}
+    entityEnabled = enabled
 
     if enabled then
-        -- Highlight all current entities
+        -- Dupe all currently existing entities
         local count = 0
         for _, entity in ipairs(entitiesFolder:GetChildren()) do
-            highlightEntity(entity)
+            trackEntity(entity)
             count = count + 1
         end
 
-        -- Watch for new entities spawning in during the session
-        local addedConn = entitiesFolder.ChildAdded:Connect(function(entity)
-            if entityHighlightEnabled then
-                highlightEntity(entity)
-            end
+        -- Watch for new entities spawning in
+        local addConn = entitiesFolder.ChildAdded:Connect(function(entity)
+            if entityEnabled then trackEntity(entity) end
         end)
-        table.insert(entityHighlightConnections, addedConn)
 
-        -- Watch for entities whose parts go invisible and force them visible
-        -- by re-applying the highlight (Highlight instance ignores transparency)
-        local descConn = entitiesFolder.DescendantAdded:Connect(function(desc)
-            if entityHighlightEnabled and desc:IsA("BasePart") then
-                local entity = desc:FindFirstAncestorOfClass("Model")
-                if entity and entity.Parent == entitiesFolder then
-                    highlightEntity(entity)
-                end
-            end
+        -- Watch for entities being removed and clean up their dupe connections
+        local removeConn = entitiesFolder.ChildRemoved:Connect(function(entity)
+            removeDupesForEntity(entity)
         end)
-        table.insert(entityHighlightConnections, descConn)
 
-        DiscordLib:Notification("Entities", string.format("Highlighting %d entity/entities.", count), "Got it")
+        table.insert(entityWatchers, addConn)
+        table.insert(entityWatchers, removeConn)
+
+        DiscordLib:Notification(
+            "Entities",
+            string.format("Tracking %d entity/entities with red dupe parts.", count),
+            "Got it"
+        )
     else
-        -- Remove all highlights
-        local removed = 0
-        for _, entity in ipairs(entitiesFolder:GetChildren()) do
-            removeEntityHighlight(entity)
-            removed = removed + 1
+        -- Kill all dupe parts and their heartbeat connections
+        for _, entry in ipairs(entityDupes) do
+            if entry.connection then entry.connection:Disconnect() end
+            if entry.part and entry.part.Parent then entry.part:Destroy() end
         end
-        DiscordLib:Notification("Entities", string.format("Removed highlights from %d entity/entities.", removed), "Got it")
+        entityDupes = {}
+
+        DiscordLib:Notification("Entities", "Entity trackers removed.", "Got it")
     end
 end)
 
@@ -250,7 +285,7 @@ entityChannel:Button("Count Entities", function()
         return
     end
     local count = #entitiesFolder:GetChildren()
-    DiscordLib:Notification("Entities", string.format("%d entity/entities in folder.", count), "Okay")
+    DiscordLib:Notification("Entities", string.format("%d entity/entities active.", count), "Okay")
     print(string.format("[Sloppy Tiles] Entities in folder: %d", count))
 end)
 
@@ -262,4 +297,4 @@ local infoChannel = serv:Channel("Info")
 infoChannel:Label("Sloppy Tiles — Tile game debugger")
 infoChannel:Label("Scans workspace.Tiles for Unactivated groups")
 infoChannel:Label("Safe = no Mine child | Unsafe = has Mine child")
-infoChannel:Label("Entities: uses Highlight so invisible ones still show")
+infoChannel:Label("Entities: neon red dupe tracks PrimaryPart each frame")
