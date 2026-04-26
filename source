@@ -1,77 +1,3 @@
-Skip to content
-Jelly-Open-Fortress
-Sloppy-Tiles
-Repository navigation
-Code
-Issues
-Pull requests
-Agents
-Actions
-Projects
-Wiki
-Security and quality
-Insights
-Settings
-Files
-Go to file
-t
-T
-source
-Sloppy-Tiles
-/
-source
-in
-main
-
-Edit
-
-Preview
-Indent mode
-
-Spaces
-Indent size
-
-4
-Line wrap mode
-
-No wrap
-Editing source file contents
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 14
- 15
- 16
- 17
- 18
- 19
- 20
- 21
- 22
- 23
- 24
- 25
- 26
- 27
- 28
- 29
- 30
- 31
- 32
- 33
- 34
- 35
- 36
 local DiscordLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt"))()
 
 local Players = game:GetService("Players")
@@ -108,4 +34,197 @@ scanChannel:Toggle("Highlight Unsafe Tiles", false, function(enabled)
     local tilesFolder = getTilesFolder()
     if not tilesFolder then
         DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
-Use Control + Shift + m to toggle the tab key moving focus. Alternatively, use esc then tab to move to the next interactive element on the page.
+        return
+    end
+
+    if enabled then
+        local count = 0
+        for _, group in ipairs(tilesFolder:GetChildren()) do
+            if group.Name == "Unactivated" and group:FindFirstChild("Mine") then
+                if not group:FindFirstChild("SloppyHighlight") then
+                    local highlight = Instance.new("SelectionBox")
+                    highlight.Name = "SloppyHighlight"
+                    highlight.Adornee = group
+                    highlight.Color3 = Color3.fromRGB(255, 0, 0)
+                    highlight.LineThickness = 0.05
+                    highlight.SurfaceTransparency = 0.6
+                    highlight.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
+                    highlight.Parent = group
+                    count = count + 1
+                end
+            end
+        end
+        DiscordLib:Notification("Scanner", string.format("Highlighted %d unsafe tile(s).", count), "Got it")
+    else
+        local removed = 0
+        for _, group in ipairs(tilesFolder:GetChildren()) do
+            local h = group:FindFirstChild("SloppyHighlight")
+            if h then h:Destroy() end
+            removed = removed + 1
+        end
+        DiscordLib:Notification("Scanner", string.format("Removed %d highlight(s).", removed), "Got it")
+    end
+end)
+
+scanChannel:Button("Count Safe / Unsafe", function()
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then
+        DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay")
+        return
+    end
+    local safe, unsafe = 0, 0
+    for _, group in ipairs(tilesFolder:GetChildren()) do
+        if group.Name == "Unactivated" then
+            if group:FindFirstChild("Mine") then unsafe += 1 else safe += 1 end
+        end
+    end
+    DiscordLib:Notification("Tile Count", string.format("Safe: %d | Unsafe: %d | Total: %d", safe, unsafe, safe + unsafe), "Nice")
+    print(string.format("[Sloppy Tiles] Safe: %d | Unsafe: %d | Total: %d", safe, unsafe, safe + unsafe))
+end)
+
+-- ============================================================
+--  Channel: Teleporter
+-- ============================================================
+
+local teleportChannel = serv:Channel("Teleporter")
+local teleportRunning = false
+
+teleportChannel:Button("Auto-Teleport Safe Tiles", function()
+    if teleportRunning then
+        DiscordLib:Notification("Teleporter", "Already running! Wait for it to finish.", "Okay")
+        return
+    end
+    local tilesFolder = getTilesFolder()
+    if not tilesFolder then DiscordLib:Notification("Error", "No 'Tiles' folder found in Workspace!", "Okay") return end
+    local character = player.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then DiscordLib:Notification("Error", "No HumanoidRootPart found.", "Okay") return end
+
+    local function findNextTile()
+        for _, group in ipairs(tilesFolder:GetChildren()) do
+            if group.Name == "Unactivated" and not group:FindFirstChild("Mine") then return group end
+        end
+        return nil
+    end
+
+    teleportRunning = true
+    task.spawn(function()
+        local count = 0
+        while true do
+            local tile = findNextTile()
+            if not tile then
+                DiscordLib:Notification("Teleporter", string.format("Done! Visited %d safe tile(s).", count), "Sweet")
+                teleportRunning = false
+                break
+            end
+            local cf = getTileCFrame(tile)
+            if cf then hrp.CFrame = cf + Vector3.new(0, 5, 0) count += 1 end
+            task.wait(0)
+        end
+    end)
+    DiscordLib:Notification("Teleporter", "Started teleporting through safe tiles!", "Let's go")
+end)
+
+-- ============================================================
+--  Channel: Entities
+-- ============================================================
+
+local entityChannel = serv:Channel("Entities")
+local entityEnabled = false
+local DUPE_NAME = "SloppyEntityDupe"
+
+local function cleanAllDupes()
+    -- Search whole workspace in case folder moved
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v.Name == DUPE_NAME then v:Destroy() end
+    end
+end
+
+entityChannel:Toggle("Show Entity Trackers", false, function(enabled)
+    local entitiesFolder = workspace:FindFirstChild("Entities")
+    if not entitiesFolder then
+        DiscordLib:Notification("Error", "No 'Entities' folder found in Workspace!", "Okay")
+        return
+    end
+
+    entityEnabled = enabled
+
+    if enabled then
+        DiscordLib:Notification("Entities", "Entity trackers started.", "Got it")
+
+        task.spawn(function()
+            while entityEnabled do
+                local entFolder = workspace:FindFirstChild("Entities")
+                if entFolder then
+                    for _, entity in ipairs(entFolder:GetChildren()) do
+                        if entity:IsA("Model") then
+                            local primary = entity.PrimaryPart or entity:FindFirstChildWhichIsA("BasePart")
+                            if primary then
+                                local dupe = workspace:FindFirstChild(DUPE_NAME .. "_" .. entity.Name)
+
+                                if not dupe then
+                                    -- Create a fresh visible dupe in workspace
+                                    dupe = Instance.new("Part")
+                                    dupe.Name = DUPE_NAME .. "_" .. entity.Name
+                                    -- Fully visible neon red, no transparency at all
+                                    dupe.Color = Color3.fromRGB(255, 50, 50)
+                                    dupe.Material = Enum.Material.Neon
+                                    dupe.Transparency = 0
+                                    dupe.CanCollide = false
+                                    dupe.CanQuery = false
+                                    dupe.Anchored = true
+                                    dupe.CastShadow = false
+                                    dupe.Size = primary.Size
+                                    dupe.CFrame = primary.CFrame
+                                    dupe.Parent = workspace
+                                end
+
+                                -- Every iteration snap dupe to the real primary
+                                dupe.CFrame = primary.CFrame
+                                dupe.Size = primary.Size
+                            end
+                        end
+                    end
+
+                    -- Clean up dupes whose entity no longer exists
+                    for _, v in ipairs(workspace:GetChildren()) do
+                        if v.Name:sub(1, #DUPE_NAME) == DUPE_NAME then
+                            local entityName = v.Name:sub(#DUPE_NAME + 2)
+                            if not entFolder:FindFirstChild(entityName) then
+                                v:Destroy()
+                            end
+                        end
+                    end
+                end
+
+                task.wait(0)
+            end
+
+            cleanAllDupes()
+            DiscordLib:Notification("Entities", "Entity trackers removed.", "Got it")
+        end)
+    else
+        cleanAllDupes()
+    end
+end)
+
+entityChannel:Button("Count Entities", function()
+    local entitiesFolder = workspace:FindFirstChild("Entities")
+    if not entitiesFolder then
+        DiscordLib:Notification("Error", "No 'Entities' folder found in Workspace!", "Okay")
+        return
+    end
+    local count = #entitiesFolder:GetChildren()
+    DiscordLib:Notification("Entities", string.format("%d entity/entities active.", count), "Okay")
+    print(string.format("[Sloppy Tiles] Entities in folder: %d", count))
+end)
+
+-- ============================================================
+--  Channel: Info
+-- ============================================================
+
+local infoChannel = serv:Channel("Info")
+infoChannel:Label("Sloppy Tiles — Tile game debugger")
+infoChannel:Label("Scans workspace.Tiles for Unactivated groups")
+infoChannel:Label("Safe = no Mine child | Unsafe = has Mine child")
+infoChannel:Label("Entities: fully visible neon red dupe tracks each entity")
