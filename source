@@ -1,4 +1,5 @@
-local DiscordLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/dependencies/DiscordLib"))()
+local raw = game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt")
+local DiscordLib = loadstring(raw)()
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
