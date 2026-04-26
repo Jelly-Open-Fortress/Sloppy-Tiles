@@ -158,6 +158,103 @@ teleportChannel:Button("Auto-Teleport Safe Tiles", function()
 end)
 
 -- ============================================================
+--  Channel: Entities
+-- ============================================================
+
+local entityChannel = serv:Channel("Entities")
+
+-- Tracks connections so we can disconnect them when toggled off
+local entityHighlightConnections = {}
+local entityHighlightEnabled = false
+
+local function highlightEntity(entity)
+    -- Use a Highlight instance for the outline glow effect
+    -- This works even on invisible parts since it renders a silhouette
+    if entity:FindFirstChild("SloppyEntityHighlight") then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "SloppyEntityHighlight"
+    highlight.Adornee = entity
+    highlight.FillColor = Color3.fromRGB(255, 50, 50)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+    highlight.FillTransparency = 0.4
+    highlight.OutlineTransparency = 0
+    -- DepthMode = AlwaysOnTop so it shows through walls too
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = entity
+end
+
+local function removeEntityHighlight(entity)
+    local h = entity:FindFirstChild("SloppyEntityHighlight")
+    if h then h:Destroy() end
+end
+
+entityChannel:Toggle("Highlight Entities", false, function(enabled)
+    local entitiesFolder = workspace:FindFirstChild("Entities")
+    if not entitiesFolder then
+        DiscordLib:Notification("Error", "No 'Entities' folder found in Workspace!", "Okay")
+        return
+    end
+
+    -- Clean up previous connections no matter what
+    for _, conn in ipairs(entityHighlightConnections) do
+        conn:Disconnect()
+    end
+    entityHighlightConnections = {}
+    entityHighlightEnabled = enabled
+
+    if enabled then
+        -- Highlight all current entities
+        local count = 0
+        for _, entity in ipairs(entitiesFolder:GetChildren()) do
+            highlightEntity(entity)
+            count = count + 1
+        end
+
+        -- Watch for new entities spawning in during the session
+        local addedConn = entitiesFolder.ChildAdded:Connect(function(entity)
+            if entityHighlightEnabled then
+                highlightEntity(entity)
+            end
+        end)
+        table.insert(entityHighlightConnections, addedConn)
+
+        -- Watch for entities whose parts go invisible and force them visible
+        -- by re-applying the highlight (Highlight instance ignores transparency)
+        local descConn = entitiesFolder.DescendantAdded:Connect(function(desc)
+            if entityHighlightEnabled and desc:IsA("BasePart") then
+                local entity = desc:FindFirstAncestorOfClass("Model")
+                if entity and entity.Parent == entitiesFolder then
+                    highlightEntity(entity)
+                end
+            end
+        end)
+        table.insert(entityHighlightConnections, descConn)
+
+        DiscordLib:Notification("Entities", string.format("Highlighting %d entity/entities.", count), "Got it")
+    else
+        -- Remove all highlights
+        local removed = 0
+        for _, entity in ipairs(entitiesFolder:GetChildren()) do
+            removeEntityHighlight(entity)
+            removed = removed + 1
+        end
+        DiscordLib:Notification("Entities", string.format("Removed highlights from %d entity/entities.", removed), "Got it")
+    end
+end)
+
+entityChannel:Button("Count Entities", function()
+    local entitiesFolder = workspace:FindFirstChild("Entities")
+    if not entitiesFolder then
+        DiscordLib:Notification("Error", "No 'Entities' folder found in Workspace!", "Okay")
+        return
+    end
+    local count = #entitiesFolder:GetChildren()
+    DiscordLib:Notification("Entities", string.format("%d entity/entities in folder.", count), "Okay")
+    print(string.format("[Sloppy Tiles] Entities in folder: %d", count))
+end)
+
+-- ============================================================
 --  Channel: Info
 -- ============================================================
 
@@ -165,3 +262,4 @@ local infoChannel = serv:Channel("Info")
 infoChannel:Label("Sloppy Tiles — Tile game debugger")
 infoChannel:Label("Scans workspace.Tiles for Unactivated groups")
 infoChannel:Label("Safe = no Mine child | Unsafe = has Mine child")
+infoChannel:Label("Entities: uses Highlight so invisible ones still show")
